@@ -324,3 +324,151 @@ def generate_preference(emotion_idx, metadata):
         C[2] = np.array([0.0, 0.0]) # flat and no preferences for BR level
     
     return C          
+
+# RUNNING THE EMOTIONAL-WALLETFINDING TASK
+def run_hier_model(env, lower_agent, hier_agent, lower_t, hier_t, H_threshold, metadata) -> dict:
+    log = { # keeping a record of what's happening at each timestep
+        "lower_observations": [],
+        "lower_obs2" : [],
+        "lower_beliefs": [],
+        "lower_q_pi": [],
+        "lower_efe": [],
+        "lower_actions": [],
+        "lower_q_entropy": [],
+        "hier_observations": [],
+        "hier_beliefs": []
+    } 
+    lower_agent.reset() # reset the lower agent
+    l_obs = env.reset() # reset the environment
+    init_h_obs = [1,0] # initial observations at hier level are normal surprise level and normal BRV
+
+    log["lower_observations"].append((l_obs,)) # recording lower agent's observations
+    log["lower_obs2"].append((l_obs)) # recording lower agent's observations in a different format
+    
+    l_qs = lower_agent.infer_states(l_obs) # lower agent infers states based on observations
+    log["lower_beliefs"].append((l_qs,)) # recording lower agent's beliefs
+
+    H = 0.0 # posterior entropy 
+    ln_qs = pymdp.maths.spm_log_obj_array(l_qs[1]) # obtaining record of the lower agent's posterior beliefs 
+    H -= l_qs[1].dot(ln_qs) # calculating posterior entropy of lower agent
+    log["lower_q_entropy"].append((H)) # recording lower agent's posterior entropy
+
+    h_sur_idx = 1 # normal surprise level indexed
+    log["lower_actions"].append(None) # no actions conducted at current timestep
+    log["hier_observations"].append(init_h_obs) # recording hier agent's initial observations
+    
+    h_qs = hier_agent.infer_states(init_h_obs) # hier agent infers states based on observations
+    log["hier_beliefs"].append(h_qs) # recording hier agent's beliefs
+
+    states = {"emotions": ["neutral", "anxious", "happy"]}  # list out the emotions we want, add additional state factors if need be
+    num_states = [len(states[state_idx]) for state_idx in states] # calculates number of states in each state factor
+    # num_factors = len(num_states)  # calculates number of state factors
+
+    choice_emotions = ["no_choice"]
+    # num_controls = [len(choice_emotions)]
+
+    observations = {"surprise_level": ["low_surprise", "normal_surprise", "high_surprise"],
+                    "BRV": ["normal", "high"]} # list out the observations and modalities we want, add additional observation modalities if need be
+    num_observations = [len(observations[obs_idx]) for obs_idx in observations] # calculates the number of observations in each modality
+    # num_modalities = len(num_observations) # calculates number of modalities
+    
+    # state = [0]
+
+    for ht in range(hier_t):
+        # h_emo_idx = np.argmax(h_qs)
+        for lt in range(lower_t):
+            count = lt + 1
+            loweragent_possiblepolicies = possible_policies(np.argmax(l_qs[0]), 5)
+            lower_agent.policies = np.array(amend_policies(loweragent_possiblepolicies))
+            lower_agent.E = np.ones(len(loweragent_possiblepolicies)) / len(loweragent_possiblepolicies)
+            
+            q_pi, efe = lower_agent.infer_policies() # lower agent infers policies
+            log["lower_q_pi"].append((q_pi,)) # recording the action
+            log["lower_efe"].append((efe,)) # recording the action
+            lower_action = lower_agent.sample_action() # lower agent samples actions
+            log["lower_actions"].append((lower_action,)) # recording the action
+            
+            l_obs = env.move(lower_action, h_sur_idx) # producing observations for lower agent via the generative process/environment, which takes the surprise index from hier level and the action the lower agent executed
+            log["lower_observations"].append((l_obs,)) # recording the lower agent's observations
+            log["lower_obs2"].append((l_obs)) # recording the lower agent's observations in a different format
+            
+            l_qs = lower_agent.infer_states(l_obs) # lower agent infers states based on observations
+            log["lower_beliefs"].append((l_qs,)) # recording the lower agent's beliefs
+            
+            H = 0. # posterior entropy 
+            ln_qs = pymdp.maths.spm_log_obj_array(l_qs[1]) # obtaining record of the lower agent's posterior beliefs 
+            H -= l_qs[1].dot(ln_qs) # calculating posterior entropy of lower agent
+            log["lower_q_entropy"].append((H)) # recording lower agent's posterior entropy
+            # print(H)
+            
+            # print('\033[1m' +"lower_timestep: " + str(count) + '\033[0m')
+            # print()
+            # print(f"lower_Actions: {lower_action}")
+            # print()
+            # print(f"lower_Observations: {l_obs}")
+            # print()
+            # print(f"lower_Posterior beliefs: {l_qs}")
+            # print()
+            # print(f"lower_Entropy: {H}")
+            # print()
+            # print(lower_agent.policies)
+            # print()
+            # print()
+
+            h_obs = [] # empty hier level observations 
+            if H > H_threshold: # if the posterior entropy is higher than 1,
+                h_obs.append(2) # append '2' (high surprise) to the hier level observations
+                h_sur_idx = 2 # the surprise level index is 2
+            elif 0.0 < H < 0.1: # if the posterior entropy is between 0 and 0.1,
+                h_obs.append(0) # append '0' (low surprise) to the hier level observations
+                h_sur_idx = 0 # the surprise level index is 0
+            else: # if the posterior entropy is anything else (basically between 0.1 and 1),
+                h_obs.append(1) # append '1' (normal surprise) to the hier level observations
+                h_sur_idx = 1 # the surprise level index is 1
+
+            # if H > 1.0: 
+            #     h_obs = [2,1]
+            # elif 0.0 < H < 0.1:
+            #     h_obs = [0,0]
+            # else:
+            #     h_obs = [1,1]
+            
+            brv_ref = [sub_list[-2:] for sub_list in log["lower_obs2"][-2:]] # creating a reference list for the BRV using the lower agent's BR observations from the previous two timesteps
+            brv_ref_2 = [sub_list[-1:] for sub_list in brv_ref] # comparing the values within the reference list
+            
+            if are_sublists_equal(brv_ref_2) == True: # if the values in the BRV reference list are equal,
+                h_obs.append(0) # append '0' (normal BRV) to the hier level observations 
+            else: # if the values in the BRV reference list are varied
+                h_obs.append(1) # append '1' (high BRV) to the hier level observations
+
+            log["hier_observations"].append(h_obs) # record the hier level observations
+
+            
+        h_qs = hier_agent.infer_states(h_obs) # hier agent infers states based on observations
+        log["hier_beliefs"].append(h_qs) # recording the hier agent's beliefs
+
+        emotion_idx = np.argmax(h_qs[0], axis=None) # getting the index for the emotional state inferred
+        lower_agent_C = generate_preference(emotion_idx, metadata) # creating C tensors for lower agent depending on emotional state inferred
+        lower_agent.C = lower_agent_C # setting the C tensors as the C tensor for the lower agent
+
+        # print('\033[1m' + f"\nhier_timestep {ht} :" + '\033[0m')
+        # print()
+        # # plot_posterior_entropy(H, "posterior entropy")
+        # print(H)
+        # print(l_qs[1])
+        # print(h_qs[0])
+        # print(np.argmax(h_qs[0], axis=None))
+        # print()
+        # print(f"hier_prior belief of state: \n{[(list(states)[f], states[list(states)[f]][state[f]]) for f in range(len(states))]}")
+        # print()
+        # print(f"hier_observations: \n{[(list(observations)[g], observations[list(observations)[g]][h_obs[g]]) for g in range(len(observations))]}")
+        # print()
+        # print(f"hier_posterior beliefs: " + str(h_qs))
+        # print()
+        # print()
+
+        if l_obs[1] == 0: # if the wallet is found, break the loop
+            break
+        # # plotting beliefs
+        # plot_emo_beliefs(hier_agent.qs[0], "hier_posterior belief of emotion at time {}".format(ht))
+    return log
