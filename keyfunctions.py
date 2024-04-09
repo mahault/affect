@@ -234,3 +234,63 @@ def amend_policies(policies):
             edited.append(np.array([step, 0]))
         res.append(edited)
     return res
+
+# BUILDING THE EMOTIONAL AGENT AND ITS GENERATIVE MODEL
+def build_emotional_agent():
+    
+    states = {"emotions": ["neutral", "anxious", "happy"]} # list out the emotions we want, add additional state factors if need be
+    num_states = [len(states[state_idx]) for state_idx in states] # calculates number of states in each state factor
+    num_factors = len(num_states) # calculates number of state factors
+
+    choice_emotions = ["no_choice"]
+    num_controls = [len(choice_emotions)]
+
+    observations = {"surprise_level": ["low_surprise", "normal_surprise", "high_surprise"],
+                    "BRV": ["normal", "high"]} # list out the observations and modalities we want, add additional observation modalities if need be
+    num_observations = [len(observations[obs_idx]) for obs_idx in observations] # calculate number of observations in each observational modality
+    num_modalities = len(num_observations) # calculate number of modalities
+
+    # create likelihood (A) tensors
+    A = pymdp.utils.obj_array(num_modalities) # creating two A tensors, one for each observation modality
+    
+    #                 neu  anx  hap _emotions
+    A[0] = np.array([[0.0, 0.0, 1.0], # low surprise
+                     [1.0, 0.0, 0.0], # normal surprise
+                     [0.0, 1.0, 0.0]]) # high surprise
+
+    #                 neu  anx  hap _emotions
+    A[1] = np.array([[0.9, 0.1, 0.1], # normal BRV
+                     [0.1, 0.9, 0.9]]) # high BRV
+    
+    A = pymdp.utils.norm_dist_obj_arr(A) # normally distribute the A tensor
+    
+    # create transition (B) tensors 
+    B = pymdp.utils.obj_array(num_factors) # creating one B tensor for the emotion state factor
+    B[0] = np.zeros( (num_states[0], num_states[0], len(choice_emotions)) ) # make the B tensor with the shape (number of emotions (rows), number of emotions (columns),  number of controllable actions (which is none here so it's of length 1; slices))
+    B[0] += 1/3 # adding a small probability of transitioning to another emotion 
+
+    B = pymdp.utils.norm_dist_obj_arr(B) # normally distribute the B tensor
+    
+    # create preference (C) tensors
+    C = pymdp.utils.obj_array(num_modalities)
+    C[0] = np.array([0.0, 0.0, 0.0])
+    C[1] = np.array([0.0, 0.0])
+    
+    # create prior distribution tensors 
+    D = pymdp.utils.obj_array(num_factors) # creating one D tensor for the emotion state factor
+    for factor_idx in range(num_factors):
+        D[factor_idx] = np.ones(num_states[factor_idx]) / num_states[factor_idx] # flat priors over emotion states
+    
+    
+    # policies = pymdp.control.construct_policies(num_states, num_controls) # constructing policies
+    
+    return pymdp.agent.Agent(
+        A=A,
+        B=B,
+        C=C,
+        D=D,
+        action_selection="stochastic",
+        policy_len=1
+
+    ) # return the variables set up and put into the Agent class in pymdp
+
