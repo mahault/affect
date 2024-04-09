@@ -609,6 +609,135 @@ def report_replay(graph, replay_log, item_location, meta):
         shutil.copy(f"{dir}/out.mp4", f"{os.getcwd()}/out.mp4")
     return f"{os.getcwd()}/out.mp4"
 
+# RUNNING WALLET AGENT ACTIVE INFERENCE 
+def wallet_agent_run(wallet_env, agent, max_steps) -> dict:
+    log = {
+        "lower_observations": [],
+        "lower_beliefs": [],
+        "lower_actions": [],
+        "q_pi": [],
+        "efe": [],
+        "lower_q_entropy": []
+    }
+        
+    agent.reset()
+    obs = wallet_env.reset()
+    log["lower_observations"].append((obs,))
+    qs = agent.infer_states(obs)
+    log["lower_beliefs"].append((qs,))
+    log["lower_actions"].append(None)
+    log["q_pi"].append(None)
+    log["efe"].append(None)
+    log["lower_q_entropy"].append(None)
+    
+    for _ in range(max_steps):
+
+        loweragent_possiblepolicies = possible_policies(np.argmax(qs[0]), 5)
+        agent.policies = np.array(amend_policies(loweragent_possiblepolicies))
+        agent.E = np.ones(len(loweragent_possiblepolicies)) / len(loweragent_possiblepolicies)
+        
+        q_pi, efe = agent.infer_policies()
+        log["q_pi"].append((q_pi,))
+        log["efe"].append((efe,))
+        
+        action = agent.sample_action()
+        log["lower_actions"].append((action,))
+        
+        obs = wallet_env.move(action)
+        log["lower_observations"].append((obs,))
+        
+        qs = agent.infer_states(obs)
+        log["lower_beliefs"].append((qs,))
+        
+        H = 0. # posterior entropy 
+        ln_qs = pymdp.maths.spm_log_obj_array(qs[1])
+        H -= qs[1].dot(ln_qs)
+        log["lower_q_entropy"].append((H))
+        
+
+        # print("timestep: " + str(_))
+        # print()
+        # print(f"Actions: {action}")
+        # print()
+        # print(f"Observations: {obs}")
+        # print()
+        # print(f"Posterior beliefs: {qs}")
+        # print()
+        # print(f"Entropy: {H}")
+        # print()
+        # print()
+                
+        if obs[1] == 0:
+            break
+    return log
+
+
+def report_replay_wallet(graph, replay_log, item_location, meta):
+    lower_observations = replay_log["lower_observations"]
+    num_agents = len(replay_log["lower_observations"][0])
+    lower_beliefs = replay_log["lower_beliefs"]
+    lower_actions = replay_log["lower_actions"]
+
+    fig = plt.figure(constrained_layout=False, figsize=(40, num_agents * 10))
+    widths = [1, 1, 2]
+    spec = fig.add_gridspec(nrows=num_agents, ncols=3, width_ratios=widths)
+    axes = []
+    t = 0
+    num_zeros = int(math.log10(len(lower_observations))) + 1
+    for i in range(num_agents):
+        axes.append(fig.add_subplot(spec[i, 0]))
+        axes.append(fig.add_subplot(spec[i, 1]))
+    axes.append(fig.add_subplot(spec[:, 2]))
+    with tempfile.TemporaryDirectory() as dir:
+        for i, (l_obs, l_qs, l_act) in enumerate(zip(lower_observations, lower_beliefs, lower_actions)):
+            # print()
+            # print()
+            # print("timestep: " + str(t))
+            t += 1
+            plot_idx = 0
+            for agent in range(num_agents):
+                if l_act:
+                    act_str = action_to_str(l_act[agent].astype(int), meta["locations"])
+                    # print(f"<agent {agent}> {act_str}")
+                plot_wallet_beliefs(l_qs[agent], "", [axes[plot_idx], axes[plot_idx + 1]])
+                l_o = np.array(l_obs)[:, 0]
+                # h_o = np.array(h_obs)[:, 0]
+                l_obs_str = obs_to_string(
+                    l_obs[agent], meta["locations"], meta["detect_wallet"]
+                )
+                
+                # print(f"<agent {agent}> {l_obs_str}")
+
+                plot_idx += 2
+            l_o = np.array(l_obs)[:, 0]
+            visualize_state(graph, l_o, item_location, axes[-1])
+            format_modifier = f"0{num_zeros}d"
+            fig.savefig(f"{dir}/{i:{format_modifier}}.png")
+            for ax in axes:
+                ax.clear()
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-framerate",
+                "1",
+                "-pattern_type",
+                "glob",
+                "-i",
+                f"{dir}/*.png",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                "1",
+                f"{dir}/out.mp4",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        shutil.copy(f"{dir}/out.mp4", f"{os.getcwd()}/out.mp4")
+    return f"{os.getcwd()}/out.mp4"
+
 # BAR CHARTS FOR PLOTTING BELIEFS OF EMOTIONAL-WALLETFINDING TASK
 def plot_beliefs(l_belief_dist, h_belief_dist, title_str="", axes=None):
     """
@@ -683,3 +812,4 @@ def evaluate_coverage(log, graph):
         coverage[t] = len(visited_nodes)
     all_nodes = list(graph.nodes())
     return coverage / len(all_nodes)
+
