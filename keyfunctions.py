@@ -70,3 +70,22 @@ def house(cluster_size = 5, connections = 4) -> typing.Tuple[networkx.Graph, dic
             location = f"drawer {i}"
         locations.append(location)
     return graph, {"locations": locations} 
+# DEFINING THE GENERATIVE PROCESS FOR THE WALLETFINDING-ONLY TASK
+class wallet_Environment:
+    def __init__(self, graph, init_state, object_location, location_labels): # initialising with the following variables
+        self.graph = graph # setting the environment as the graph
+        self.init_state = init_state # the start state
+        self.state = init_state # setting the start state as the current state
+        self.object_location = object_location # the true state (location) the object is in - this is what the agent infers
+        self.location_labels = location_labels # the location labels returned from the 'generate_connected_clusters' function
+
+    def move(self, action): # setting the instructions on what the consequences of the actions are in the environment (which are usually fed as observations to the agent in the next time step)
+        target = int(action[0]) # the target location will be the action that's chosen (e.g., move to location 4)
+        if self.graph.has_edge(self.state, target) or self.graph.has_edge(target, self.state): # if the graph has the edge that connects the target location to the location the agent is currently in, then move there
+            self.state = target
+
+        return [self.state, 0 if self.state == self.object_location else 1, 0] # return the current state the agent is in, and whether the agent is in the location where the object (wallet) is in (0 if yes, 1 if no), and the breathing rate observation (br_obs)
+
+    def reset(self): # what to do when resetting the environment
+        self.state = self.init_state # go back to start state
+        return [self.state, 0 if self.init_state == self.object_location else 1, 0] # return the current state the agent is in, and whether the agent is in the location where the object (wallet) is in (0 if yes, 1 if no), and the breathing rate observation (br_obs) which is low (0)
