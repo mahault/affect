@@ -644,3 +644,42 @@ def plot_beliefs(l_belief_dist, h_belief_dist, title_str="", axes=None):
     axes[2].tick_params(axis='y', which='major', labelsize=14)
     axes[2].tick_params(axis='x', which='major', labelsize=24)
 
+# BAR CHARTS FOR PLOTTING BELIEFS OF WALLETFINDING-ONLY TASK
+def plot_wallet_beliefs(l_belief_dist, title_str="", axes=None):
+    """
+    Plot a categorical distribution or belief distribution, stored in the 1-D numpy vector `belief_dist`
+    """
+    if axes is None:
+        fig, axes = plt.subplots(1, 3, figsize=(20, 10))
+        fig.suptitle(title_str)
+    axes[0].grid(zorder=0)
+    axes[0].bar(range(l_belief_dist[0].shape[0]), l_belief_dist[0], color="k", zorder=3)
+    xrange = list(range(l_belief_dist[0].shape[0]))
+    axes[0].set_xticks(xrange)
+
+    axes[1].grid(zorder=0)
+    axes[1].bar(range(l_belief_dist[1].shape[0]), l_belief_dist[1], color="b", zorder=3)
+    xrange1 = list(range(l_belief_dist[1].shape[0]))
+    axes[1].set_xticks(xrange1)
+
+# PLOTTING POSTERIOR ENTROPY
+def plot_posterior_entropy(Hs, title=""):
+    plt.grid(zorder=0)
+    plt.bar(range(Hs.shape[0]), Hs, color='r')
+    plt.xticks(range(Hs.shape[0]))
+    plt.title(title)
+    plt.show()
+
+# FOR EXPERIMENT LOGGING
+def evaluate_coverage(log, graph):
+    amount_agents = len(log["lower_observations"][0])
+    visited_nodes = set()
+    time_len = len(log["lower_observations"])
+    coverage = np.zeros(time_len)
+    for t in range(time_len):
+        for agent in range(amount_agents):
+            obs = log["lower_observations"][t][agent][0]
+            visited_nodes.add((obs))
+        coverage[t] = len(visited_nodes)
+    all_nodes = list(graph.nodes())
+    return coverage / len(all_nodes)
