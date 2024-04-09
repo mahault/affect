@@ -1,6 +1,6 @@
 # emotionalinference
 
-Emotional Inference Demonstration Overview
+## Emotional Inference Demonstration Overview
 This demonstration, crafted with the collaboration of Riddhi Pitliya Jain, showcases an innovative approach to understanding emotional responses through active inference. It revolves around a scenario where we observe an agent's emotional states as they navigate through the challenge of locating their wallet within their home. This setup serves as a practical application for our emotional inference model, a sophisticated hierarchical active inference framework. At its core, the model integrates a dual-level analysis: the primary level focuses on the agent's task-specific actions (in this case, searching for a wallet), while the superior level reflecting its hierarchical nature, is tasked with the emotional analysis of the activities at the lower tier.
 
 Additionally, the demonstration includes a control scenario—designated as the wallet-finding task devoid of the emotional inference architecture. This setup is intended to provide a comparative analysis against the comprehensive emotional-wallet-finding task, allowing for a clearer understanding of the emotional inference model's impact and effectiveness.
