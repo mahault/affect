@@ -211,3 +211,26 @@ def build_agent_from_graph(graph, metadata, impreciseA, obj_loc_priors):
         action_selection="stochastic",
         policy_len=4
     ) # return the variables set up and put into the Agent class in pymdp
+
+# POLICY SEARCH FOR PRUNING
+def findpaths(g, u, n):
+    if n == 0:
+        return [[u]]
+    return [
+        [u] + path
+        for neighbor in g.neighbors(u)
+        for path in findpaths(g, neighbor, n - 1)
+        ]
+
+def possible_policies(s, l): 
+    graph, meta = generate_connected_clusters(5,4)
+    return [p[1:] for p in findpaths(graph, s, l)]
+
+def amend_policies(policies):
+    res = []
+    for policy in policies:
+        edited = []
+        for step in policy:
+            edited.append(np.array([step, 0]))
+        res.append(edited)
+    return res
