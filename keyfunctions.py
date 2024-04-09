@@ -472,3 +472,175 @@ def run_hier_model(env, lower_agent, hier_agent, lower_t, hier_t, H_threshold, m
         # # plotting beliefs
         # plot_emo_beliefs(hier_agent.qs[0], "hier_posterior belief of emotion at time {}".format(ht))
     return log
+
+################################### VISUALISATIONS ###################################
+
+# TO VISUALISE THE STATES ON THE GRAPH
+def visualize_state(graph, agent_locs, item_loc, meta, ax=None):
+    color_map = ["lightgrey"] * len(list(graph.nodes()))
+    _colors = copy.deepcopy(matplotlib.colors.TABLEAU_COLORS)
+    # del _colors["b"]
+    del _colors["tab:red"]
+    _colors = list(_colors.keys())
+    color_map[item_loc] = "tab:red"
+    for i, agent in enumerate(agent_locs):
+        color_map[agent] = _colors[i]
+    random_pos = networkx.random_layout(graph, seed=42)
+    pos = networkx.spring_layout(graph, pos=random_pos, k=0.3)
+
+    node_shapes = {}
+    for node in graph.nodes():
+        if node == item_loc:
+            node_shapes[node] = "s"  
+        else:
+            node_shapes[node] = "o"  
+    
+    for node, shape in node_shapes.items():
+        networkx.draw_networkx_nodes(graph, pos, ax=ax, nodelist=[node], node_color=color_map[node], node_shape=shape, node_size=700)
+    
+    labels = {node: meta["locations"][node] for node in graph.nodes()}  # create labels dictionary
+    networkx.draw_networkx_labels(graph, pos, labels = labels, ax=ax, font_color="black", font_size = 20)
+    networkx.draw_networkx_edges(graph, pos, ax=ax)
+    # plt.show()
+    # networkx.draw(graph, ax=ax, node_color=color_map, with_labels=True, pos=pos)
+
+# FUNCTIONS TO CHANGE ACTIONS AND OBSERVATIONS TO STRINGS
+def obs_to_string(obs, outcome_labels, obj_outcome_labels, br_labels):
+    return f"Observation (lower level): {outcome_labels[obs[0]]} & {obj_outcome_labels[obs[1]]} & {br_labels[obs[2]]}"
+
+def h_obs_to_string(obs, surprise_labels, BRV_labels):
+    return f"Observation (hier level): {surprise_labels[obs[0]]} & {BRV_labels[obs[1]]}"
+
+def br_to_string(obs, br_labels):
+    return f"BR: {br_labels[obs[2]]}"
+
+def brv_to_string(obs, BRV_labels):
+    return f"BRV: {BRV_labels[obs[1]]}"
+
+
+def action_to_str(action, move_labels):
+    return f"Action (lower level): {move_labels[action[0]]}"
+
+# REPORTING THE RECORD FOR WALLETFINDING-ONLY TASK
+def report_replay(graph, replay_log, item_location, meta):
+    lower_observations = replay_log["lower_observations"]
+    num_agents = len(replay_log["lower_observations"][0])
+    lower_beliefs = replay_log["lower_beliefs"]
+    lower_actions = replay_log["lower_actions"]
+    hier_observations = replay_log["hier_observations"]
+    hier_beliefs = replay_log["hier_beliefs"]
+
+    fig = plt.figure(constrained_layout=False, figsize=(40, 20))
+    widths = [1, 1, 2.5]
+    spec = fig.add_gridspec(nrows=2, ncols=3, width_ratios=widths)
+    axes = []
+    t = 0
+    num_zeros = int(math.log10(len(lower_observations))) + 1
+    
+    axes.append(fig.add_subplot(spec[0, 0]))
+    axes.append(fig.add_subplot(spec[0, 1]))
+    axes.append(fig.add_subplot(spec[1, 0]))
+    axes.append(fig.add_subplot(spec[1, 1]))
+    axes.append(fig.add_subplot(spec[:, 2]))
+    with tempfile.TemporaryDirectory() as dir:
+        for i, (l_obs, l_qs, l_act, h_obs, h_qs) in enumerate(zip(lower_observations, lower_beliefs, lower_actions, hier_observations, hier_beliefs)):
+            # print()
+            # print()
+            # print("timestep: " + str(t))
+            t += 1
+            plot_idx = 0
+            for agent in range(num_agents):
+                if l_act:
+                    act_str = action_to_str(l_act[agent].astype(int), meta["locations"])
+                    # print(f"<agent {agent}> {act_str}")
+                plot_beliefs(l_qs[agent], h_qs[agent], "", [axes[plot_idx], axes[plot_idx + 1], axes[plot_idx + 2]])
+                l_o = np.array(l_obs)[:, 0]
+                # h_o = np.array(h_obs)[:, 0]
+                l_obs_str = obs_to_string(
+                    l_obs[agent], meta["locations"], meta["detect_wallet"], meta["BR_level"]
+                )
+                h_obs_str = h_obs_to_string(
+                    h_obs, meta["surprise_level"], meta["BRV_level"]
+                )
+
+                br_str = br_to_string(
+                    l_obs[agent], meta["BR_level"]
+                )
+                brv_str = brv_to_string(
+                    h_obs, meta["BRV_level"]
+                )
+                # print(f"<agent {agent}> {l_obs_str}")
+                # print(f"<agent {agent}> {h_obs_str}")
+
+                # add timestep and BR_level and BRV_level to a subplot
+                axes[3].clear() 
+                axes[3].text(0.5, 0.5, f"Timestep: {t} \n{br_str} \n{brv_str}", 
+                             horizontalalignment='center', verticalalignment='center', 
+                             transform=axes[3].transAxes, fontsize = 30)
+                axes[3].axis('off')  # hide the axis
+
+                plot_idx += 3
+            l_o = np.array(l_obs)[:, 0]
+            visualize_state(graph, l_o, item_location, meta, axes[-1])
+            format_modifier = f"0{num_zeros}d"
+            fig.savefig(f"{dir}/{i:{format_modifier}}.png")
+            for ax in axes:
+                ax.clear()
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-framerate",
+                "1",
+                "-pattern_type",
+                "glob",
+                "-i",
+                f"{dir}/*.png",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                "1",
+                f"{dir}/out.mp4",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        shutil.copy(f"{dir}/out.mp4", f"{os.getcwd()}/out.mp4")
+    return f"{os.getcwd()}/out.mp4"
+
+# BAR CHARTS FOR PLOTTING BELIEFS OF EMOTIONAL-WALLETFINDING TASK
+def plot_beliefs(l_belief_dist, h_belief_dist, title_str="", axes=None):
+    """
+    plot a categorical distribution or belief distribution, stored in the 1-D numpy vector `belief_dist`
+    """
+    if axes is None:
+        fig, axes = plt.subplots(1, 4, figsize=(20, 10))
+        fig.suptitle(title_str)
+    axes[0].grid(zorder=0)
+    axes[0].bar(range(l_belief_dist[0].shape[0]), l_belief_dist[0], color="k", zorder=3)
+    xrange = list(range(l_belief_dist[0].shape[0]))
+    axes[0].set_xticks(xrange)
+    axes[0].set_ylim([0, 1])
+    axes[0].set_title('Beliefs about self_location', fontsize = 24)
+    axes[0].tick_params(axis='y', which='major', labelsize=14)
+    axes[0].tick_params(axis='x', which='major', labelsize=12)
+
+    axes[1].grid(zorder=0)
+    axes[1].bar(range(l_belief_dist[1].shape[0]), l_belief_dist[1], color="b", zorder=3)
+    xrange1 = list(range(l_belief_dist[1].shape[0]))
+    axes[1].set_xticks(xrange1)
+    axes[1].set_ylim([0, 1])
+    axes[1].set_title('Beliefs about wallet_location', fontsize = 24)
+    axes[1].tick_params(axis='y', which='major', labelsize=14)
+    axes[1].tick_params(axis='x', which='major', labelsize=12)
+
+    axes[2].grid(zorder=0)
+    axes[2].bar(range(h_belief_dist.shape[0]), h_belief_dist, color="r", zorder=3)
+    xrange2 = list(range(h_belief_dist.shape[0]))
+    axes[2].set_xticks(xrange2, labels = ("neutral", "anxious", "happy"))
+    axes[2].set_ylim([0, 1])
+    axes[2].set_title('Beliefs about emotional_state', fontsize = 24)
+    axes[2].tick_params(axis='y', which='major', labelsize=14)
+    axes[2].tick_params(axis='x', which='major', labelsize=24)
+
