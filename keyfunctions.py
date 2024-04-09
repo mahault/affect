@@ -294,3 +294,33 @@ def build_emotional_agent():
 
     ) # return the variables set up and put into the Agent class in pymdp
 
+# GENERATE C TENSORS FOR LOWER LEVEL BASED ON EMOTIONAL STATE INFERRED AT HIER LEVEL
+def generate_preference(emotion_idx, metadata):
+    self_location_o = metadata["locations"]  # the first observation modality, location of the self
+    detect_wallet = metadata["detect_wallet"] # the second observation modality, whether the wallet has been detected as 'present' or 'absent'
+    br_level = metadata["BR_level"] # the third observation modality, the breathing rate level
+    num_observations = [len(self_location_o), len(detect_wallet), len(br_level)] # the number of observations we have in each observation modality
+    num_modalities = len(num_observations) # the number of observation modalities we have
+    
+
+    C = pymdp.utils.obj_array(3) # creating three C tensors, one for each observation modality
+    if emotion_idx == 0: # neutral
+        C[0] = np.zeros(num_observations[0])
+        # C[0] = np.array([0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0])
+        C[1] = np.array([1.0, 0.0]) # prefer to observe the wallet
+        C[2] = np.array([0.0, 0.0]) # flat and no preferences for BR level
+        
+    if emotion_idx == 1: # anxious
+        C[0] = np.zeros(num_observations[0])
+        # C[0] = np.array([1.0, 1.0, 1.0, 2.0, 2.0, 1.0, 2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) # flat preferences to be in all locations
+        # C[0] = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]) # flat preferences to be in all locations
+        C[1] = np.array([10.0, 0.0]) # highly prefer to observe the wallet
+        C[2] = np.array([0.0, 0.0]) # flat and no preferences for BR level
+        
+    if emotion_idx == 2: # happy
+        C[0] = np.zeros(num_observations[0])
+        # C[0] = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) # flat and no preferences to be in all locations
+        C[1] = np.array([1.0, 0.0]) # prefer to observe the wallet
+        C[2] = np.array([0.0, 0.0]) # flat and no preferences for BR level
+    
+    return C          
