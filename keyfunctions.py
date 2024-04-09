@@ -609,6 +609,20 @@ def report_replay(graph, replay_log, item_location, meta):
         shutil.copy(f"{dir}/out.mp4", f"{os.getcwd()}/out.mp4")
     return f"{os.getcwd()}/out.mp4"
 
+def evaluate_found(log):
+    amount_agents = len(log["lower_observations"][0])
+    visited = []
+    for agent in range(amount_agents):
+        visited.extend([obs[agent][1] for obs in log["lower_observations"]])
+    return any([state == 0 for state in visited])
+
+
+def evaluate_length(log):
+    return len(log["lower_observations"])
+
+
+
+
 # RUNNING WALLET AGENT ACTIVE INFERENCE 
 def wallet_agent_run(wallet_env, agent, max_steps) -> dict:
     log = {
